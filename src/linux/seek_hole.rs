@@ -77,7 +77,7 @@ mod tests {
     use super::*;
     use crate::tempdir::TempDir;
     use std::fs::File;
-    use std::io::{Seek, SeekFrom, Write};
+    use std::io::{Seek, SeekFrom};
     use std::path::PathBuf;
 
     fn seek_cur(file: &mut File) -> u64 {
@@ -95,40 +95,13 @@ mod tests {
         assert_eq!(file.seek_data(0).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
 
-        // File with non-zero length consisting entirely of a hole
-        file.set_len(0x10000).unwrap();
-        assert_eq!(file.seek_data(0).unwrap(), None);
-        assert_eq!(seek_cur(&mut file), 0);
-
-        // seek_data at or after the end of the file should return None
+        // seek_data at or after the end of the file should return None.  We can't reliably
+        // test anything else, because it's up to the filesystem whether to report holes or
+        // not, so we don't know what the expected return value is.
         assert_eq!(file.seek_data(0x10000).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
         assert_eq!(file.seek_data(0x10001).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
-
-        // Write some data to [0x10000, 0x20000)
-        let b = [0x55u8; 0x10000];
-        file.seek(SeekFrom::Start(0x10000)).unwrap();
-        file.write_all(&b).unwrap();
-        assert_eq!(file.seek_data(0).unwrap(), Some(0x10000));
-        assert_eq!(seek_cur(&mut file), 0x10000);
-
-        // seek_data within data should return the same offset
-        assert_eq!(file.seek_data(0x10000).unwrap(), Some(0x10000));
-        assert_eq!(seek_cur(&mut file), 0x10000);
-        assert_eq!(file.seek_data(0x10001).unwrap(), Some(0x10001));
-        assert_eq!(seek_cur(&mut file), 0x10001);
-        assert_eq!(file.seek_data(0x1FFFF).unwrap(), Some(0x1FFFF));
-        assert_eq!(seek_cur(&mut file), 0x1FFFF);
-
-        // Extend the file to add another hole after the data
-        file.set_len(0x30000).unwrap();
-        assert_eq!(file.seek_data(0).unwrap(), Some(0x10000));
-        assert_eq!(seek_cur(&mut file), 0x10000);
-        assert_eq!(file.seek_data(0x1FFFF).unwrap(), Some(0x1FFFF));
-        assert_eq!(seek_cur(&mut file), 0x1FFFF);
-        assert_eq!(file.seek_data(0x20000).unwrap(), None);
-        assert_eq!(seek_cur(&mut file), 0x1FFFF);
     }
 
     #[test]
@@ -143,83 +116,13 @@ mod tests {
         assert_eq!(file.seek_hole(0).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
 
-        // File with non-zero length consisting entirely of a hole
-        file.set_len(0x10000).unwrap();
-        assert_eq!(file.seek_hole(0).unwrap(), Some(0));
-        assert_eq!(seek_cur(&mut file), 0);
-        assert_eq!(file.seek_hole(0xFFFF).unwrap(), Some(0xFFFF));
-        assert_eq!(seek_cur(&mut file), 0xFFFF);
-
-        // seek_hole at or after the end of the file should return None
+        // seek_hole at or after the end of the file should return None.  We can't reliably
+        // test anything else, because it's up to the filesystem whether to report holes or
+        // not, so we don't know what the expected return value is.
         file.seek(SeekFrom::Start(0)).unwrap();
         assert_eq!(file.seek_hole(0x10000).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
         assert_eq!(file.seek_hole(0x10001).unwrap(), None);
-        assert_eq!(seek_cur(&mut file), 0);
-
-        // Write some data to [0x10000, 0x20000)
-        let b = [0x55u8; 0x10000];
-        file.seek(SeekFrom::Start(0x10000)).unwrap();
-        file.write_all(&b).unwrap();
-
-        // seek_hole within a hole should return the same offset
-        assert_eq!(file.seek_hole(0).unwrap(), Some(0));
-        assert_eq!(seek_cur(&mut file), 0);
-        assert_eq!(file.seek_hole(0xFFFF).unwrap(), Some(0xFFFF));
-        assert_eq!(seek_cur(&mut file), 0xFFFF);
-
-        // seek_hole within data should return the next hole (EOF)
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x10000).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x10001).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x1FFFF).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-
-        // seek_hole at EOF after data should return None
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x20000).unwrap(), None);
-        assert_eq!(seek_cur(&mut file), 0);
-
-        // Extend the file to add another hole after the data
-        file.set_len(0x30000).unwrap();
-        assert_eq!(file.seek_hole(0).unwrap(), Some(0));
-        assert_eq!(seek_cur(&mut file), 0);
-        assert_eq!(file.seek_hole(0xFFFF).unwrap(), Some(0xFFFF));
-        assert_eq!(seek_cur(&mut file), 0xFFFF);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x10000).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x1FFFF).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x20000).unwrap(), Some(0x20000));
-        assert_eq!(seek_cur(&mut file), 0x20000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x20001).unwrap(), Some(0x20001));
-        assert_eq!(seek_cur(&mut file), 0x20001);
-
-        // seek_hole at EOF after a hole should return None
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x30000).unwrap(), None);
-        assert_eq!(seek_cur(&mut file), 0);
-
-        // Write some data to [0x20000, 0x30000)
-        file.seek(SeekFrom::Start(0x20000)).unwrap();
-        file.write_all(&b).unwrap();
-
-        // seek_hole within [0x20000, 0x30000) should now find the hole at EOF
-        assert_eq!(file.seek_hole(0x20000).unwrap(), Some(0x30000));
-        assert_eq!(seek_cur(&mut file), 0x30000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x20001).unwrap(), Some(0x30000));
-        assert_eq!(seek_cur(&mut file), 0x30000);
-        file.seek(SeekFrom::Start(0)).unwrap();
-        assert_eq!(file.seek_hole(0x30000).unwrap(), None);
         assert_eq!(seek_cur(&mut file), 0);
     }
 }
